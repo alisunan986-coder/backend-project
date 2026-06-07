@@ -3,6 +3,10 @@ require('dotenv').config()
 const express = require('express')
 // Create an instance of an Express application used to register middleware and routes
 const app = express()
+const cors = require('cors')
+app.use(cors())
+const bcrypt = require('bcrypt')
+const jwt = require('jsonwebtoken')
 const { PrismaClient } = require('@prisma/client')
 const prisma = new PrismaClient({
   datasources: {
@@ -47,6 +51,58 @@ app.get('/users/:id', async (req, res) => {
 
   res.json(user)
 })
+app.post('/register', async (req, res) => {
+  const { name, email, password, role } = req.body
+
+  if (!name || !email || !password || !role) {
+    return res.status(400).json({ message: 'All fields are required' })
+  }
+
+  // Encrypt the password before saving
+  const hashedPassword = await bcrypt.hash(password, 10)
+
+  const user = await prisma.user.create({
+    data: {
+      name,
+      email,
+      password: hashedPassword,
+      role
+    }
+  })
+
+  res.status(201).json({ message: 'User created successfully', userId: user.id })
+})
+
+app.post('/login', async (req, res) => {
+  const { email, password } = req.body
+
+  // Find user by email
+  const user = await prisma.user.findUnique({
+    where: { email }
+  })
+
+  if (!user) {
+    return res.status(404).json({ message: 'User not found' })
+  }
+
+  // Compare password with encrypted one
+  const isMatch = await bcrypt.compare(password, user.password)
+
+  if (!isMatch) {
+    return res.status(401).json({ message: 'Wrong password' })
+  }
+
+  // Create a JWT token
+  const token = jwt.sign(
+    { userId: user.id },
+    'mysecretkey',
+    { expiresIn: '1d' }
+  )
+
+  res.json({ message: 'Login successful', token })
+})
+
+
 // Route 4 - Create a new user
 app.post('/users', async (req, res) => {
   const { name, role } = req.body
@@ -65,17 +121,21 @@ app.post('/users', async (req, res) => {
   res.status(201).json(newUser)
 })
 //Route 5
-app.post('/products',(req,res)=>{
-    const {name, price} =req.body
-     if (!name || !price ) {
-        return res.status(400).json({ message: 'name and price are required'})
-     }
-     const newproduct ={
-        id: 1,
-        name:" name",
-        price:price
-     }
-     res.status(201).json(newproduct)
+app.post('/products', async (req, res) => {
+  const { name, price } = req.body
+
+  if (!name || !price) {
+    return res.status(400).json({ message: 'name and price are required' })
+  }
+
+  const newProduct = await prisma.product.create({
+    data: {
+      name: name,
+      price: price
+    }
+  })
+
+  res.status(201).json(newProduct)
 })
 // Route 6- Update a user
 app.put('/users/:id', async (req, res) => {
